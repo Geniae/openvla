@@ -43,11 +43,12 @@ from prismatic.models.backbones.llm.prompting import PurePromptBuilder, VicunaV1
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
-from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
+# from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
+from prismatic.vla.datasets.tomato_datasets import TorchRLDSLikeIterableDataset, load_samples_from_pt
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -78,26 +79,26 @@ class FinetuneConfig:
     vla_path: str = "openvla/openvla-7b"                            # Path to OpenVLA model (on HuggingFace Hub)
 
     # Directory Paths
-    data_root_dir: Path = Path("datasets/open-x-embodiment")        # Path to Open-X dataset directory
-    dataset_name: str = "droid_wipe"                                # Name of fine-tuning dataset (e.g., `droid_wipe`)
+    data_root_dir: Path = Path("data")        # Path to Open-X dataset directory
+    dataset_name: str = "episode_overfit"                                # Name of fine-tuning dataset (e.g., `droid_wipe`)
     run_root_dir: Path = Path("runs")                               # Path to directory to store logs & checkpoints
     adapter_tmp_dir: Path = Path("adapter-tmp")                     # Temporary directory for LoRA weights before fusing
 
     # Fine-tuning Parameters
-    batch_size: int = 16                                            # Fine-tuning batch size
-    max_steps: int = 200_000                                        # Max number of fine-tuning steps
-    save_steps: int = 5000                                          # Interval for checkpoint saving
-    learning_rate: float = 5e-4                                     # Fine-tuning learning rate
+    batch_size: int = 1                                    # Fine-tuning batch size
+    max_steps: int = 1000                                     # Max number of fine-tuning steps
+    save_steps: int = 250                                      # Interval for checkpoint saving
+    learning_rate: float = 1e-4                                     # Fine-tuning learning rate
     grad_accumulation_steps: int = 1                                # Gradient accumulation steps
-    image_aug: bool = True                                          # Whether to train with image augmentations
-    shuffle_buffer_size: int = 100_000                              # Dataloader shuffle buffer size (can reduce if OOM)
+    image_aug: bool = False                                          # Whether to train with image augmentations
+    shuffle_buffer_size: int = 100                             # Dataloader shuffle buffer size (can reduce if OOM)
     save_latest_checkpoint_only: bool = True                        # Whether to save only one checkpoint per run and
                                                                     #   continually overwrite the latest checkpoint
                                                                     #   (If False, saves all checkpoints)
 
     # LoRA Arguments
     use_lora: bool = True                                           # Whether to use LoRA fine-tuning
-    lora_rank: int = 32                                             # Rank of LoRA weight matrix
+    lora_rank: int = 8                                             # Rank of LoRA weight matrix
     lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights
     use_quantization: bool = False                                  # Whether to 4-bit quantize VLA for LoRA fine-tuning
                                                                     #   => CAUTION: Reduces memory but hurts performance
@@ -212,18 +213,20 @@ def finetune(cfg: FinetuneConfig) -> None:
         image_transform=processor.image_processor.apply_transform,
         prompt_builder_fn=PurePromptBuilder if "v01" not in cfg.vla_path else VicunaV15ChatPromptBuilder,
     )
-    vla_dataset = RLDSDataset(
-        cfg.data_root_dir,
-        cfg.dataset_name,
-        batch_transform,
-        resize_resolution=tuple(vla.module.config.image_sizes),
+
+    dataset_path = cfg.data_root_dir / cfg.dataset_name
+    samples = load_samples_from_pt(dataset_path)  # list of dicts with image_primary/action/language_instruction
+    vla_dataset = TorchRLDSLikeIterableDataset(
+        samples=samples,
+        batch_transform=batch_transform,
+        dataset_name=cfg.dataset_name,  # reuse your flag
         shuffle_buffer_size=cfg.shuffle_buffer_size,
-        image_aug=cfg.image_aug,
+        infinite=True,
     )
 
     # [Important] Save Dataset Statistics =>> used to de-normalize actions for inference!
-    if distributed_state.is_main_process:
-        save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
+    # if distributed_state.is_main_process:
+    #     save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
 
     # Create Collator and DataLoader
     collator = PaddedCollatorForActionPrediction(
@@ -238,8 +241,8 @@ def finetune(cfg: FinetuneConfig) -> None:
     )
 
     # Initialize Logging =>> W&B
-    if distributed_state.is_main_process:
-        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{exp_id}")
+    # if distributed_state.is_main_process:
+    #     wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{exp_id}")
 
     # Deque to store recent train metrics (used for computing smoothened metrics for gradient accumulation)
     recent_losses = deque(maxlen=cfg.grad_accumulation_steps)
@@ -301,15 +304,15 @@ def finetune(cfg: FinetuneConfig) -> None:
             smoothened_l1_loss = sum(recent_l1_losses) / len(recent_l1_losses)
 
             # Push Metrics to W&B (every 10 gradient steps)
-            if distributed_state.is_main_process and gradient_step_idx % 10 == 0:
-                wandb.log(
-                    {
-                        "train_loss": smoothened_loss,
-                        "action_accuracy": smoothened_action_accuracy,
-                        "l1_loss": smoothened_l1_loss,
-                    },
-                    step=gradient_step_idx,
-                )
+            # if distributed_state.is_main_process and gradient_step_idx % 10 == 0:
+            #     wandb.log(
+            #         {
+            #             "train_loss": smoothened_loss,
+            #             "action_accuracy": smoothened_action_accuracy,
+            #             "l1_loss": smoothened_l1_loss,
+            #         },
+            #         step=gradient_step_idx,
+            #     )
 
             # Optimizer Step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
@@ -352,7 +355,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                             os.makedirs(checkpoint_dir, exist_ok=True)
 
                             # Save dataset statistics to new directory
-                            save_dataset_statistics(vla_dataset.dataset_statistics, checkpoint_dir)
+                            # save_dataset_statistics(vla_dataset.dataset_statistics, checkpoint_dir)
 
                             # Save processor and model weights to new directory
                             processor.save_pretrained(checkpoint_dir)

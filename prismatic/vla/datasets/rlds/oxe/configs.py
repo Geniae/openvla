@@ -26,7 +26,7 @@ Configuration adopts the following structure:
 
 from enum import IntEnum
 
-from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import zero_action_filter
+# from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import zero_action_filter
 
 
 # Defines Proprioceptive State Encoding Schemes
@@ -530,22 +530,22 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
-    "droid": {
-        "image_obs_keys": {
-            "primary": "exterior_image_1_left",
-            "secondary": "exterior_image_2_left",
-            "wrist": "wrist_image_left",
-        },
-        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
-        "state_obs_keys": ["proprio"],
-        "state_encoding": StateEncoding.POS_QUAT,
-        "action_encoding": ActionEncoding.EEF_POS,
-        "aux_kwargs": {
-            "dataset_frame_transform_kwargs": {
-                "chunk_filter_fn": zero_action_filter,
-            },
-        },
-    },
+    # "droid": {
+    #     "image_obs_keys": {
+    #         "primary": "exterior_image_1_left",
+    #         "secondary": "exterior_image_2_left",
+    #         "wrist": "wrist_image_left",
+    #     },
+    #     "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+    #     "state_obs_keys": ["proprio"],
+    #     "state_encoding": StateEncoding.POS_QUAT,
+    #     "action_encoding": ActionEncoding.EEF_POS,
+    #     "aux_kwargs": {
+    #         "dataset_frame_transform_kwargs": {
+    #             "chunk_filter_fn": zero_action_filter,
+    #         },
+    #     },
+    # },
     "fmb_dataset": {
         "image_obs_keys": {
             "primary": "image_side_1",

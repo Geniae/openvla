@@ -11,21 +11,21 @@ from typing import Any, Dict, List, Tuple
 
 from prismatic.overwatch import initialize_overwatch
 from prismatic.vla.datasets.rlds.oxe.configs import OXE_DATASET_CONFIGS, ActionEncoding
-from prismatic.vla.datasets.rlds.oxe.transforms import OXE_STANDARDIZATION_TRANSFORMS
-from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
+# from prismatic.vla.datasets.rlds.oxe.transforms import OXE_STANDARDIZATION_TRANSFORMS
+# from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
 
 
 def make_oxe_dataset_kwargs(
+    action_proprio_normalization_type,#: NormalizationType = NormalizationType.NORMAL,
     dataset_name: str,
     data_root_dir: Path,
     load_camera_views: Tuple[str] = ("primary",),
     load_depth: bool = False,
     load_proprio: bool = True,
     load_language: bool = True,
-    action_proprio_normalization_type: NormalizationType = NormalizationType.NORMAL,
 ) -> Dict[str, Any]:
     """Generates config (kwargs) for given dataset from Open-X Embodiment."""
     dataset_kwargs = deepcopy(OXE_DATASET_CONFIGS[dataset_name])
@@ -67,7 +67,7 @@ def make_oxe_dataset_kwargs(
         dataset_kwargs["language_key"] = "language_instruction"
 
     # Specify Standardization Transform
-    dataset_kwargs["standardize_fn"] = OXE_STANDARDIZATION_TRANSFORMS[dataset_name]
+    # dataset_kwargs["standardize_fn"] = OXE_STANDARDIZATION_TRANSFORMS[dataset_name]
 
     # Add any aux arguments
     if "aux_kwargs" in dataset_kwargs:
@@ -77,13 +77,13 @@ def make_oxe_dataset_kwargs(
 
 
 def get_oxe_dataset_kwargs_and_weights(
+    action_proprio_normalization_type,#: NormalizationType = NormalizationType.NORMAL,
     data_root_dir: Path,
     mixture_spec: List[Tuple[str, float]],
     load_camera_views: Tuple[str] = ("primary",),
     load_depth: bool = False,
     load_proprio: bool = True,
     load_language: bool = True,
-    action_proprio_normalization_type: NormalizationType = NormalizationType.NORMAL,
 ) -> Tuple[Dict[str, Any], List[float]]:
     """
     Generates dataset kwargs for a given dataset mix from the Open X-Embodiment dataset. The returned kwargs
